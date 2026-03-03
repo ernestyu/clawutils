@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import argparse
 import sys
+import subprocess
+from pathlib import Path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -36,14 +38,28 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "web" and args.web_cmd == "scrape":
-        # For now we only stub the command so that `clawutils web scrape URL`
-        # exists and prints a clear error. The real implementation will live
-        # under clawutils.web.* and be wired here.
-        sys.stderr.write(
-            "ERROR: web scrape not implemented yet. This is a stub CLI; "
-            "the actual scraper will be added in a future commit.\n"
-        )
-        return 2
+        # Resolve the bundled Node.js scraper script and delegate to `node`.
+        script_path = Path(__file__).resolve().parent / "web" / "scrape.js"
+        if not script_path.exists():
+            sys.stderr.write(
+                f"ERROR: scraper script not found at {script_path}. "
+                "Check your clawutils installation.\n"
+            )
+            return 2
+
+        cmd = ["node", str(script_path), args.url]
+        try:
+            proc = subprocess.run(cmd)
+            return proc.returncode
+        except FileNotFoundError:
+            sys.stderr.write(
+                "ERROR: 'node' executable not found. Install Node.js to use "
+                "'clawutils web scrape'.\n"
+            )
+            return 2
+        except Exception as e:
+            sys.stderr.write(f"ERROR: failed to run scraper: {e}\n")
+            return 2
 
     parser.print_help()
     return 0
