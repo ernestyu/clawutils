@@ -1,0 +1,10 @@
+LICENSE
+README.md
+pyproject.toml
+src/clawutils/__init__.py
+src/clawutils/cli.py
+src/clawutils.egg-info/PKG-INFO
+src/clawutils.egg-info/SOURCES.txt
+src/clawutils.egg-info/dependency_links.txt
+src/clawutils.egg-info/entry_points.txt
+src/clawutils.egg-info/top_level.txt

@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clawutils"
+version = "0.0.1"
+description = "CLI utilities and helpers around OpenClaw (web scraping, text patching, kb tooling)"
+readme = "README.md"
+authors = [{ name = "Ernest Yu" }]
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/ernestyu/clawutils"
+
+[project.scripts]
+# Unified CLI entrypoint; for now we stub it, will implement later.
+clawutils = "clawutils.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
