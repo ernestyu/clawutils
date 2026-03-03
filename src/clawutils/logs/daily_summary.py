@@ -508,7 +508,7 @@ def _outline_from_clusters(clusters: List[Cluster], date_str: str) -> str:
     return "\n".join(lines)
 
 
-def summarize_clusters(clusters: List[Cluster], date_str: str) -> str:
+def summarize_clusters(clusters: List[Cluster], date_str: str, *, verbose: bool = False) -> str:
     """Summarize clusters into a diary-style text.
 
     Strategy:
@@ -517,17 +517,28 @@ def summarize_clusters(clusters: List[Cluster], date_str: str) -> str:
     - Otherwise, return a deterministic outline summary.
     """
 
-    # If no LLM configured, fall back to outline mode.
-    if _small_llm_config() is None or httpx is None:
+    cfg = _small_llm_config()
+    if cfg is None or httpx is None:
+        if verbose:
+            print("[logs/daily] SMALL_LLM_* not configured; using outline mode.")
         return _outline_from_clusters(clusters, date_str)
+
+    if verbose:
+        print("[logs/daily] Summarizing via small LLM...")
 
     # Build a per-cluster summary via the small LLM.
     cluster_summaries: List[str] = []
-    for c in clusters:
+    base, model, _ = cfg
+    for idx, c in enumerate(clusters):
+        if verbose:
+            print(f"[logs/daily]  - Summarizing topic {idx+1}/{len(clusters)} (provider={model})")
         pieces: List[str] = []
         for seg in c.segments:
             pieces.append(seg.text)
         cluster_text = "\n\n".join(pieces)
+        # Hard truncate cluster_text to avoid extremely long prompts.
+        if len(cluster_text) > 4000:
+            cluster_text = cluster_text[:4000] + "..."
         prompt = (
             f"今天 ({date_str}) 的以下对话片段都属于同一个主题。\n"
             "请用简体中文写一个结构化小结，重点说明：\n"
@@ -579,6 +590,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--agent-dir",
         help="Agent directory (default: ~/.openclaw/agents/main)",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Verbose progress output",
+    )
 
     args = parser.parse_args(argv)
 
@@ -591,12 +607,35 @@ def main(argv: Optional[List[str]] = None) -> int:
         home = Path(os.path.expanduser("~"))
         agent_dir = home / ".openclaw" / "agents" / "main"
 
-    messages = _extract_messages_for_date(agent_dir, date_str)
-    messages = filter_messages(messages)
-    segments = segment_messages(messages)
-    clusters = cluster_segments(segments)
+    if args.verbose:
+        print(f"[logs/daily] Target date: {date_str}")
+        print(f"[logs/daily] Agent dir: {agent_dir}")
 
-    diary = summarize_clusters(clusters, date_str)
+    if args.verbose:
+        print("[1/4] Reading session messages...")
+    messages = _extract_messages_for_date(agent_dir, date_str)
+    if args.verbose:
+        print(f"[1/4] Done. Messages: {len(messages)}")
+
+    if args.verbose:
+        print("[2/4] Filtering noise...")
+    messages = filter_messages(messages)
+    if args.verbose:
+        print(f"[2/4] Done. Messages after filter: {len(messages)}")
+
+    if args.verbose:
+        print("[3/4] Building segments...")
+    segments = segment_messages(messages)
+    if args.verbose:
+        print(f"[3/4] Done. Segments: {len(segments)}")
+
+    if args.verbose:
+        print("[4/4] Clustering topics...")
+    clusters = cluster_segments(segments)
+    if args.verbose:
+        print(f"[4/4] Done. Clusters: {len(clusters)}")
+
+    diary = summarize_clusters(clusters, date_str, verbose=args.verbose)
     print(diary)
 
     return 0
