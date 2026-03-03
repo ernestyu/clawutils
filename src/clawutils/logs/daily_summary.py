@@ -601,8 +601,13 @@ def _topic_keywords(text: str, max_keywords: int = 5) -> List[str]:
 
 
 def _segment_stats(segments: List[Segment]) -> str:
+    """Compact per-topic stats: "15 msgs | 42.3 min".
+
+    This is purely for display in the outline view.
+    """
+
     if not segments:
-        return "Messages: 0"
+        return "0 msgs | 0.0 min"
     msgs = 0
     for seg in segments:
         # approximate: count lines as messages
@@ -610,7 +615,7 @@ def _segment_stats(segments: List[Segment]) -> str:
     start = segments[0].start
     end = segments[-1].end
     duration = (end - start).total_seconds() / 60.0
-    return f"Messages: {msgs} | Duration: {duration:.1f} min"
+    return f"{msgs} msgs | {duration:.1f} min"
 
 
 def _outline_from_clusters(clusters: List[Cluster], date_str: str) -> str:
@@ -627,19 +632,16 @@ def _outline_from_clusters(clusters: List[Cluster], date_str: str) -> str:
         lines.append("(No significant messages for this date.)")
         return "\n".join(lines)
 
-    for c in clusters:
+    for idx, c in enumerate(clusters, start=1):
         lines.append("")
-        # Topic title with keyword fingerprint
+        # Topic title with keyword fingerprint and compact stats
         all_text = "\n\n".join(seg.text for seg in c.segments)
         kws = _topic_keywords(all_text)
-        if kws:
-            lines.append(f"## Topic {c.id + 1}: [{', '.join(kws)}]")
-        else:
-            lines.append(f"## Topic {c.id + 1}")
-
-        # Basic stats
         stats = _segment_stats(c.segments)
-        lines.append(stats)
+        if kws:
+            lines.append(f"## {idx}. [{', '.join(kws)}] ({stats})")
+        else:
+            lines.append(f"## {idx}. ({stats})")
 
         # Representative sample: pick the densest-looking sentence instead of
         # blindly using the first message.
@@ -647,7 +649,7 @@ def _outline_from_clusters(clusters: List[Cluster], date_str: str) -> str:
         if sample:
             if len(sample) > 200:
                 sample = sample[:200] + "..."
-            lines.append(f"Sample: {sample}")
+            lines.append(f"> {sample}")
 
     return "\n".join(lines)
 
