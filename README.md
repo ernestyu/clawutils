@@ -17,8 +17,10 @@ The long‑term goal is to provide both:
 - A unified CLI entrypoint (e.g. `clawutils web scrape <URL>`) so humans and
   agents can discover and call tools in a structured way.
 
-> Status: bootstrap phase. Initial focus: a robust web scraping pipeline and
-> a safe text patcher for incremental edits.
+> Status: early but usable. Currently provides:
+> - A robust web scraping pipeline (`clawutils web scrape`)
+> - A safe text patcher for incremental edits (`clawutils text patch`)
+> - A daily logs summarizer for OpenClaw agents (`clawutils logs daily`)
 
 ---
 

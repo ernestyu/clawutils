@@ -1,13 +1,12 @@
 """Unified CLI entrypoint for clawutils.
 
-For now this is a very small stub that will grow into:
+This CLI exposes a small set of utilities around OpenClaw:
 
     clawutils web scrape <URL>
-    clawutils text patch <FILE> [...]
-    clawutils fs prune [...]
+    clawutils text patch --file <FILE> [...]
+    clawutils logs daily [--date ...]
 
-The first concrete utility we will implement is a robust web scraper
-that outputs normalized markdown suitable for Clawkb ingest.
+More tools can be added over time under the same `clawutils` namespace.
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ from pathlib import Path
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="clawutils",
-        description="CLI utilities around OpenClaw (web, text, kb, fs)",
+        description="CLI utilities around OpenClaw (web scraping, text patching, daily logs)",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

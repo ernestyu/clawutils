@@ -11,9 +11,10 @@
 - 可通过 `import clawutils` 使用的 Python 库；
 - 一个统一的 CLI 入口（例如 `clawutils web scrape <URL>`），方便人类和 Agent 在一个命名空间里发现这些工具。
 
-> 当前状态：bootstrap 阶段，已经提供：
-> - 一个基于 Playwright + Readability 的网页抓取器；
-> - 一个安全的文本补丁工具，用于在文件头/尾或特定标记后插入文本。
+> 当前状态：已可在日常环境中使用，当前包含：
+> - 基于 Playwright + Readability 的网页抓取器（`clawutils web scrape`）；
+> - 安全的文本补丁工具（`clawutils text patch`），用于在文件头/尾或特定标记后插入文本；
+> - OpenClaw 会话“按天日志总结”工具（`clawutils logs daily`）。
 
 ---
 
