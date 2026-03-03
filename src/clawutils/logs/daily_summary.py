@@ -444,12 +444,17 @@ def cluster_segments_embedding(segments: List[Segment], threshold: float = 0.75)
     return clusters
 
 
-def cluster_segments(segments: List[Segment]) -> List[Cluster]:
+def cluster_segments(segments: List[Segment], cluster_threshold: Optional[float] = None) -> List[Cluster]:
     """Cluster segments by similarity.
 
     - If embeddings are configured and calls succeed, use embedding-based
       clustering.
     - Otherwise, fall back to TF-IDF-like bag-of-words clustering.
+
+    The `cluster_threshold` parameter controls the TF-IDF cosine similarity
+    threshold when embeddings are not used. Lower values merge more segments
+    into fewer, broader topics; higher values produce more, finer-grained
+    clusters.
     """
 
     if not segments:
@@ -460,7 +465,9 @@ def cluster_segments(segments: List[Segment]) -> List[Cluster]:
     if clusters is not None:
         return clusters
 
-    # Fallback: TF-IDF clustering.
+    # Fallback: TF-IDF clustering with an optional custom threshold.
+    if cluster_threshold is not None:
+        return cluster_segments_tfidf(segments, threshold=cluster_threshold)
     return cluster_segments_tfidf(segments)
 
 
@@ -620,6 +627,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         action="store_true",
         help="Verbose progress output",
     )
+    parser.add_argument(
+        "--cluster-threshold",
+        type=float,
+        help="Override TF-IDF cosine threshold for clustering (0-1). Lower = fewer, broader topics",
+    )
 
     args = parser.parse_args(argv)
 
@@ -635,6 +647,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.verbose:
         print(f"[logs/daily] Target date: {date_str}")
         print(f"[logs/daily] Agent dir: {agent_dir}")
+        if args.cluster_threshold is not None:
+            print(f"[logs/daily] Cluster threshold (TF-IDF): {args.cluster_threshold}")
 
     if args.verbose:
         print("[1/4] Reading session messages...")
@@ -656,7 +670,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.verbose:
         print("[4/4] Clustering topics...")
-    clusters = cluster_segments(segments)
+    clusters = cluster_segments(segments, cluster_threshold=args.cluster_threshold)
     if args.verbose:
         print(f"[4/4] Done. Clusters: {len(clusters)}")
 

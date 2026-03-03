@@ -63,6 +63,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Verbose progress output",
     )
+    sp_logs_daily.add_argument(
+        "--cluster-threshold",
+        type=float,
+        help="Override TF-IDF cosine threshold for clustering (0-1). Lower = fewer, broader topics",
+    )
 
     sp_text_patch = sp_text_sub.add_parser(
         "patch",
@@ -133,6 +138,8 @@ def main(argv: list[str] | None = None) -> int:
             cli_args.extend(["--agent-dir", args.agent_dir])
         if getattr(args, "verbose", False):
             cli_args.append("--verbose")
+        if getattr(args, "cluster_threshold", None) is not None:
+            cli_args.extend(["--cluster-threshold", str(args.cluster_threshold)])
 
         return logs_daily_main(cli_args)
 
