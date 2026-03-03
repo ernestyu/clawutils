@@ -98,11 +98,20 @@ def _yesterday_utc() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _iter_session_files(agent_dir: Path) -> Iterable[Path]:
+def _iter_session_files(agent_dir: Path, *, reverse: bool = True) -> Iterable[Path]:
+    """Yield session files in (optionally) reverse mtime order.
+
+    We sort by modification time descending so that recent sessions are
+    processed first. This allows us to short-circuit when looking for recent
+    dates (e.g. "yesterday") and avoid scanning the entire history.
+    """
+
     sessions_dir = agent_dir / "sessions"
     if not sessions_dir.exists():
         return []
-    return sorted(sessions_dir.glob("*.jsonl"))
+    files = list(sessions_dir.glob("*.jsonl"))
+    files.sort(key=lambda p: p.stat().st_mtime, reverse=reverse)
+    return files
 
 
 def _extract_messages_for_date(agent_dir: Path, date_str: str) -> List[Message]:
@@ -115,7 +124,23 @@ def _extract_messages_for_date(agent_dir: Path, date_str: str) -> List[Message]:
     target_date = date_str
     out: List[Message] = []
 
+    # Compute the target day's time window in UTC.
+    try:
+        day = _dt.date.fromisoformat(target_date)
+    except Exception:
+        day = None
+    start_dt = _dt.datetime(day.year, day.month, day.day, tzinfo=_dt.timezone.utc) if day else None
+
     for path in _iter_session_files(agent_dir):
+        # Short-circuit using filesystem mtime when possible: if the file was
+        # last modified strictly before the target day starts, it cannot
+        # contain messages for that date.
+        if start_dt is not None:
+            mtime = _dt.datetime.fromtimestamp(path.stat().st_mtime, tz=_dt.timezone.utc)
+            if mtime < start_dt:
+                # Because files are sorted by mtime desc, we can break early.
+                break
+
         try:
             f = path.open("r", encoding="utf-8")
         except Exception:

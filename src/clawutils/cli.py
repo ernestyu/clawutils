@@ -58,6 +58,11 @@ def main(argv: list[str] | None = None) -> int:
         "--agent-dir",
         help="Agent directory (default: ~/.openclaw/agents/main)",
     )
+    sp_logs_daily.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Verbose progress output",
+    )
 
     sp_text_patch = sp_text_sub.add_parser(
         "patch",
@@ -121,13 +126,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "logs" and args.logs_cmd == "daily":
         from .logs.daily_summary import main as logs_daily_main
 
-        return logs_daily_main(
-            [
-                "--date",
-                args.date,
-            ]
-            + (["--agent-dir", args.agent_dir] if args.agent_dir else [])
-        )
+        cli_args: list[str] = []
+        if args.date:
+            cli_args.extend(["--date", args.date])
+        if args.agent_dir:
+            cli_args.extend(["--agent-dir", args.agent_dir])
+        if getattr(args, "verbose", False):
+            cli_args.append("--verbose")
+
+        return logs_daily_main(cli_args)
 
     parser.print_help()
     return 0
