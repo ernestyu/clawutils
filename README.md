@@ -71,6 +71,7 @@ Current top‑level commands:
 
 - `clawutils web ...`   – Web‑related utilities (scrapers, cleaners)
 - `clawutils text ...`  – Text utilities (patch, transform)
+- `clawutils logs ...`  – Logs/session utilities (daily summaries, inspections)
 
 Use `--help` on each subcommand for details:
 
@@ -79,6 +80,8 @@ clawutils web --help
 clawutils web scrape --help
 clawutils text --help
 clawutils text patch --help
+clawutils logs --help
+clawutils logs daily --help
 ```
 
 ---
@@ -209,7 +212,129 @@ handle the insertion on disk.
 
 ---
 
-## 5. Skills Integration (OpenClaw)
+## 5. Daily Logs Summarizer (`clawutils logs daily`)
+
+The logs summarizer turns a day's worth of OpenClaw session logs into a
+structured outline or diary‑style summary.
+
+> The current implementation focuses on the main agent's session JSONL files
+> under `~/.openclaw/agents/main/sessions`.
+
+### 5.1 Basic usage
+
+```bash
+# Summarize yesterday (UTC) for the main agent
+clawutils logs daily
+
+# Summarize a specific date
+clawutils logs daily --date 2026-03-02
+
+# Summarize using a custom agent directory
+clawutils logs daily --date 2026-03-02 \
+  --agent-dir ~/.openclaw/agents/main \
+  --verbose
+```
+
+Key options:
+
+- `--date YYYY-MM-DD` – Target date (UTC). If omitted, defaults to yesterday.
+- `--agent-dir PATH` – Agent directory; defaults to
+  `~/.openclaw/agents/main`.
+- `--verbose` – Print detailed progress logs (phases, counts, clustering).
+- `--cluster-threshold FLOAT` – Override TF‑IDF cosine threshold when
+  embeddings are not used. Lower values merge more segments into fewer,
+  broader topics; higher values keep clusters more granular.
+
+### 5.2 Behavior & design
+
+1. **Session scanning**
+   - Scans `sessions/*.jsonl` under the chosen `agent-dir`.
+   - Files are processed in **reverse mtime order** (newest first).
+   - Uses file modification time to short‑circuit: once a file's `mtime` is
+     strictly before the start of the target date, older files are skipped.
+
+2. **Message extraction & cleaning**
+   - Keeps only `type == "message"` with `role` in `{user, assistant}`.
+   - Flattens `content[]` into plain text (`type == "text"`).
+   - Strips obvious system metadata blocks:
+     - `Conversation info (untrusted metadata)`
+     - `Forwarded message context (untrusted metadata)`
+     and their following JSON blocks.
+   - Filters out short shell/log‑like noise (e.g. one‑liners containing
+     `pip`, `npm`, `git`, `ls`, `cd`, `docker`, `openclaw`).
+
+3. **Segmentation**
+   - Messages are grouped into segments in chronological order.
+   - A new segment starts when adding another message would exceed a size
+     limit (currently ~2000 characters).
+   - This avoids both extremely small and extremely large segments; topic
+     grouping is handled by clustering.
+
+4. **Clustering (topics)**
+   - If embeddings are configured (`EMBEDDING_*` env vars) and available,
+     segments are clustered via embedding‑based cosine similarity.
+   - Otherwise, a TF‑IDF‑style bag‑of‑words cosine similarity is used as a
+     fallback:
+     - Default threshold is `0.6`.
+     - You can override with `--cluster-threshold`.
+   - The goal is to group semantically related segments into topic clusters,
+     even if they are far apart in time.
+
+5. **Summarization modes**
+   - If `SMALL_LLM_*` env vars are configured and `httpx` is available:
+     - Each topic cluster is summarized via a small LLM.
+     - A final "daily diary" is generated from the per‑cluster summaries.
+   - Otherwise, a deterministic **outline mode** is used:
+     - Each topic is printed with keywords, stats, and a representative
+       sample line.
+
+### 5.3 Outline mode format (no LLM)
+
+When no small LLM is configured, the output looks roughly like this:
+
+```text
+Daily summary for 2026-03-02
+
+## 1. [clawutils, daily, logs] (15 msgs | 42.3 min)
+> 代表性的那一句话……
+
+## 2. [Clawkb, maintenance, delete] (8 msgs | 21.5 min)
+> Another representative sentence...
+```
+
+Details:
+
+- **Topic numbering**: topics are numbered `1.`, `2.`, ... to make them easy
+  to reference in conversation.
+- **Keyword fingerprint**: keywords are extracted per topic via
+  `jieba.analyse.textrank` (when available), with a simple bag‑of‑words
+  fallback. This makes the topic's core content visible at a glance.
+- **Compact stats**: `(<N> msgs | <M> min)` shows approximate message count
+  and time span.
+- **Representative sample**: a single quoted line (`> ...`) is chosen per
+  topic using a rough signal‑to‑noise ratio heuristic (token density), so
+  that high‑information sentences are preferred.
+
+This mode requires no external LLMs and is designed to be useful even in
+offline or "no‑API" environments.
+
+### 5.4 LLM‑backed diary mode
+
+When `SMALL_LLM_BASE_URL`, `SMALL_LLM_MODEL`, and `SMALL_LLM_API_KEY` are
+set and reachable, `clawutils logs daily` will:
+
+1. Generate a short structured summary for each topic cluster via the small
+   LLM.
+2. Ask the small LLM to merge those topic summaries into a single daily
+   diary, using a first‑person style and emphasizing decisions, conclusions,
+   and follow‑up TODOs.
+
+If any LLM call fails, the command falls back to the outline mode described
+above.
+
+---
+
+## 6. Skills Integration (OpenClaw)
 
 clawutils ships with example skills for OpenClaw agents under `skills/`:
 

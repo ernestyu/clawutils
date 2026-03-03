@@ -65,7 +65,8 @@ clawutils --help
 目前支持的顶层子命令：
 
 - `clawutils web ...`   – 与网页相关的工具（抓取、清洗）；
-- `clawutils text ...`  – 与文本相关的工具（补丁、转换）。
+- `clawutils text ...`  – 与文本相关的工具（补丁、转换）；
+- `clawutils logs ...`  – 与日志相关的工具（按天摘要、检查等）。
 
 可以继续查看子命令帮助：
 
@@ -74,6 +75,8 @@ clawutils web --help
 clawutils web scrape --help
 clawutils text --help
 clawutils text patch --help
+clawutils logs --help
+clawutils logs daily --help
 ```
 
 ---
@@ -196,7 +199,110 @@ Agent 只需生成要插入的那段文本，真正的文件定位与修改由 `
 
 ---
 
-## 5. 与 OpenClaw Skills 的集成
+## 5. 日志按天总结器 (`clawutils logs daily`)
+
+`clawutils logs daily` 用于将某一天的 OpenClaw 会话日志整理成结构化大纲或“日记式”总结。
+
+> 当前实现主要针对主 Agent 的 JSONL 会话日志目录：
+> `~/.openclaw/agents/main/sessions`。
+
+### 5.1 基本用法
+
+```bash
+# 总结（UTC 意义上的）昨天
+clawutils logs daily
+
+# 总结指定日期
+clawutils logs daily --date 2026-03-02
+
+# 使用自定义 agent 目录并打开详细输出
+clawutils logs daily --date 2026-03-02 \
+  --agent-dir ~/.openclaw/agents/main \
+  --verbose
+```
+
+关键参数：
+
+- `--date YYYY-MM-DD` – 目标日期（UTC），不指定时默认是“昨天”；
+- `--agent-dir PATH` – Agent 目录，默认 `~/.openclaw/agents/main`；
+- `--verbose` – 打印详细的阶段进度（读取、过滤、分段、聚类等）；
+- `--cluster-threshold FLOAT` – 覆盖 TF‑IDF 聚类的余弦阈值（0–1）。
+  - 数值越低：越容易合并为少量粗主题；
+  - 数值越高：主题保留得更细。
+
+### 5.2 行为与设计
+
+1. **会话文件扫描**
+   - 扫描指定 `agent-dir` 下的 `sessions/*.jsonl`；
+   - 按文件修改时间逆序处理（最新的先处理）；
+   - 利用 `mtime` 做短路：当某个文件的修改时间早于目标日期起点时，停止继续扫描更旧文件。
+
+2. **消息提取与清洗**
+   - 只保留 `type == "message"` 且 `role` 在 `{user, assistant}` 的记录；
+   - 将 `content[]` 中的 `type == "text"` 条目展平成纯文本；
+   - 剥离明显的系统注入元数据块：
+     - `Conversation info (untrusted metadata)`
+     - `Forwarded message context (untrusted metadata)`
+     以及它们后续的 JSON 代码块；
+   - 过滤短小的 shell/log 噪音（如包含 `pip`、`npm`、`git`、`ls`、`cd`、`docker`、`openclaw` 且长度很短的命令行输出）。
+
+3. **分段 (segment)**
+   - 按时间顺序累积消息，形成文本段落；
+   - 当加入下一条消息会导致段落长度超过约 2000 字符时，开启新段；
+   - 这样既避免极小片段，又避免单段过大；真正的话题归类交给后续聚类完成。
+
+4. **聚类（话题）**
+   - 若配置了向量服务（`EMBEDDING_*` 环境变量）且可用，则优先采用向量余弦相似做聚类；
+   - 否则采用 TF‑IDF 风格的 bag‑of‑words 余弦相似作为降级路径：
+     - 默认阈值为 `0.6`；
+     - 可以通过 `--cluster-threshold` 覆盖；
+   - 目标是把语义相近的段落聚到一起，即使它们在时间上彼此相隔较远。
+
+5. **总结模式**
+   - 若配置了小模型网关（`SMALL_LLM_*` 环境变量）且 `httpx` 可用：
+     - 为每个话题 Cluster 调用小模型生成结构化小结；
+     - 再让小模型基于这些小结生成一篇完整的“当日日记”；
+   - 否则启用确定性的 **大纲模式**：
+     - 每个话题输出关键词、统计信息和一行代表性句子。
+
+### 5.3 大纲模式（无 LLM）输出结构
+
+在未配置 small LLM 时，输出大致类似：
+
+```text
+Daily summary for 2026-03-02
+
+## 1. [clawutils, daily, logs] (15 msgs | 42.3 min)
+> 代表性的那一句话……
+
+## 2. [Clawkb, maintenance, delete] (8 msgs | 21.5 min)
+> Another representative sentence...
+```
+
+具体说明：
+
+- **话题编号**：使用 `1.`、`2.` 等递增编号，方便在对话中直接引用“第 3 个话题”；
+- **关键词指纹**：每个话题通过 `jieba.analyse.textrank`（如可用）提取若干关键词（并有简单的 BOW 降级方案），一眼即可看出该话题的核心内容；
+- **紧凑统计**：`(<N> msgs | <M> min)` 展示该话题的消息数量和时间跨度；
+- **代表性句子**：每个话题选取一行 `> ...` 作为引用，基于粗略的“信噪比”（token 密度）选择信息量较高的句子，而不是盲目使用第一条消息。
+
+该模式不依赖任何外部 LLM，在离线或“无 API” 环境下也能为人工/Agent 提供可用的语义索引。
+
+### 5.4 小模型加持的“日记模式”
+
+当 `SMALL_LLM_BASE_URL`、`SMALL_LLM_MODEL`、`SMALL_LLM_API_KEY` 均已配置且可访问时：
+
+1. 对每个话题 Cluster 调用小模型生成简短的结构化小结；
+2. 再用同一个小模型将这些小结整合成一篇当日日记：
+   - 采用第一人称（“我”）视角；
+   - 按主题/事项分段；
+   - 重点突出当天的决策、结论和 TODO。
+
+如果任何一步 LLM 调用失败，则自动回退到上面的纯大纲模式。
+
+---
+
+## 6. 与 OpenClaw Skills 的集成
 
 clawutils 自带两份示例 Skill 定义，位于 `skills/` 目录：
 
