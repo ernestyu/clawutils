@@ -39,6 +39,26 @@ def main(argv: list[str] | None = None) -> int:
     sp_text = sub.add_parser("text", help="Text utilities (patch, transform)")
     sp_text_sub = sp_text.add_subparsers(dest="text_cmd", required=True)
 
+    # Logs / session summarization utilities
+    sp_logs = sub.add_parser(
+        "logs",
+        help="Logs/session utilities (daily summaries, inspections)",
+    )
+    sp_logs_sub = sp_logs.add_subparsers(dest="logs_cmd", required=True)
+
+    sp_logs_daily = sp_logs_sub.add_parser(
+        "daily",
+        help="Summarize a day's OpenClaw session logs into a diary-style outline",
+    )
+    sp_logs_daily.add_argument(
+        "--date",
+        help="Target date (YYYY-MM-DD). If omitted, defaults to yesterday (UTC)",
+    )
+    sp_logs_daily.add_argument(
+        "--agent-dir",
+        help="Agent directory (default: ~/.openclaw/agents/main)",
+    )
+
     sp_text_patch = sp_text_sub.add_parser(
         "patch",
         help="Patch a text file (prepend/append/after marker)",
@@ -96,6 +116,17 @@ def main(argv: list[str] | None = None) -> int:
                 args.mode,
             ]
             + (["--marker", args.marker] if args.mode == "after" and args.marker else [])
+        )
+
+    if args.command == "logs" and args.logs_cmd == "daily":
+        from .logs.daily_summary import main as logs_daily_main
+
+        return logs_daily_main(
+            [
+                "--date",
+                args.date,
+            ]
+            + (["--agent-dir", args.agent_dir] if args.agent_dir else [])
         )
 
     parser.print_help()
