@@ -37,6 +37,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional
 
+# Optional Chinese keyword extraction (used for topic fingerprinting).
+try:
+    import jieba.analyse as _jieba_analyse  # type: ignore
+
+    _JIEBA_AVAILABLE = True
+except Exception:  # pragma: no cover - soft dependency
+    _jieba_analyse = None
+    _JIEBA_AVAILABLE = False
+
 try:  # optional dependency; required only if you enable embedding/LLM summarization
     import httpx  # type: ignore
 except Exception:  # pragma: no cover - handled via feature gating
@@ -131,6 +140,10 @@ def _extract_messages_for_date(agent_dir: Path, date_str: str) -> List[Message]:
         day = None
     start_dt = _dt.datetime(day.year, day.month, day.day, tzinfo=_dt.timezone.utc) if day else None
 
+    # Regex to strip system metadata from message text.
+    def _clean_text(raw: str) -> str:
+        return _strip_system_metadata(raw)
+
     for path in _iter_session_files(agent_dir):
         # Short-circuit using filesystem mtime when possible: if the file was
         # last modified strictly before the target day starts, it cannot
@@ -167,11 +180,13 @@ def _extract_messages_for_date(agent_dir: Path, date_str: str) -> List[Message]:
                 if str(ts.date()) != target_date:
                     continue
 
-                # Flatten text content
+                # Flatten text content and strip system metadata
                 texts: List[str] = []
                 for c in msg.get("content") or []:
                     if c.get("type") == "text" and c.get("text"):
-                        texts.append(str(c["text"]))
+                        cleaned = _clean_text(str(c["text"]))
+                        if cleaned:
+                            texts.append(cleaned)
                 if not texts:
                     continue
                 out.append(Message(timestamp=ts, role=role, text="\n".join(texts)))
@@ -186,6 +201,47 @@ def _extract_messages_for_date(agent_dir: Path, date_str: str) -> List[Message]:
 
 
 _SHELL_LIKE = re.compile(r"\b(pip|npm|git|ssh|ls|cd|docker|openclaw)\b", re.I)
+
+# Rough heuristic for OpenClaw-injected metadata blocks
+_META_BLOCK = re.compile(r"^(Conversation info|Forwarded message context).*", re.I)
+
+
+def _strip_system_metadata(text: str) -> str:
+    """Remove obvious system-injected metadata blocks.
+
+    This targets things like "Conversation info (untrusted metadata)" and
+    "Forwarded message context (untrusted metadata)" plus the following JSON
+    block. The goal is to leave only human-visible conversation content.
+    """
+
+    if not text:
+        return ""
+
+    lines = text.splitlines()
+    out_lines: list[str] = []
+    skip_json = False
+
+    for line in lines:
+        if _META_BLOCK.match(line.strip()):
+            # Skip this line and start skipping subsequent JSON-looking lines
+            skip_json = True
+            continue
+        if skip_json:
+            # Heuristic: stop skipping when we hit an empty line or a line
+            # that clearly looks like normal prose again.
+            stripped = line.strip()
+            if not stripped:
+                skip_json = False
+                continue
+            if stripped.startswith("{") or stripped.startswith("}") or stripped.startswith("`"):
+                # Still likely part of JSON / code block
+                continue
+            # Otherwise, treat as normal content and stop skipping.
+            skip_json = False
+
+        out_lines.append(line)
+
+    return "\n".join(out_lines).strip()
 
 
 def _is_mostly_shell_or_log(text: str) -> bool:
@@ -512,6 +568,51 @@ def _call_small_llm(prompt: str) -> Optional[str]:
         return None
 
 
+def _topic_keywords(text: str, max_keywords: int = 5) -> List[str]:
+    """Extract topic keywords for a cluster using jieba when available.
+
+    This is intentionally lightweight and only used for display in
+    outline/degenerate mode. When jieba is unavailable, returns an empty
+    list and the caller can fall back to other signals.
+    """
+
+    if not text:
+        return []
+
+    snippet = text[:1000]
+
+    # Jieba-based keywords for Chinese / mixed-language content.
+    if _JIEBA_AVAILABLE and _jieba_analyse is not None:  # type: ignore[truthy-bool]
+        try:
+            tags = _jieba_analyse.textrank(snippet, topK=max_keywords)  # type: ignore[attr-defined]
+        except Exception:
+            try:
+                tags = _jieba_analyse.extract_tags(snippet, topK=max_keywords)  # type: ignore[attr-defined]
+            except Exception:
+                tags = []
+        return [t for t in tags if t]
+
+    # Fallback: simple BOW-based top tokens.
+    tokens = _normalize_text_for_bow(snippet)
+    if not tokens:
+        return []
+    cnt = Counter(tokens)
+    return [w for w, _ in cnt.most_common(max_keywords)]
+
+
+def _segment_stats(segments: List[Segment]) -> str:
+    if not segments:
+        return "Messages: 0"
+    msgs = 0
+    for seg in segments:
+        # approximate: count lines as messages
+        msgs += max(1, seg.text.count("\n") + 1)
+    start = segments[0].start
+    end = segments[-1].end
+    duration = (end - start).total_seconds() / 60.0
+    return f"Messages: {msgs} | Duration: {duration:.1f} min"
+
+
 def _outline_from_clusters(clusters: List[Cluster], date_str: str) -> str:
     """Deterministic outline summary (no LLM).
 
@@ -528,16 +629,63 @@ def _outline_from_clusters(clusters: List[Cluster], date_str: str) -> str:
 
     for c in clusters:
         lines.append("")
-        lines.append(f"## Topic {c.id + 1}")
-        first = c.segments[0].start
-        last = c.segments[-1].end
-        lines.append(f"Time span: {first.isoformat()} → {last.isoformat()}")
-        sample = c.segments[0].text.replace("\n", " ")
-        if len(sample) > 200:
-            sample = sample[:200] + "..."
-        lines.append(f"Sample: {sample}")
+        # Topic title with keyword fingerprint
+        all_text = "\n\n".join(seg.text for seg in c.segments)
+        kws = _topic_keywords(all_text)
+        if kws:
+            lines.append(f"## Topic {c.id + 1}: [{', '.join(kws)}]")
+        else:
+            lines.append(f"## Topic {c.id + 1}")
+
+        # Basic stats
+        stats = _segment_stats(c.segments)
+        lines.append(stats)
+
+        # Representative sample: pick the densest-looking sentence instead of
+        # blindly using the first message.
+        sample = _pick_representative_sample(c.segments)
+        if sample:
+            if len(sample) > 200:
+                sample = sample[:200] + "..."
+            lines.append(f"Sample: {sample}")
 
     return "\n".join(lines)
+
+
+def _snr_score(text: str) -> float:
+    """Very rough signal-to-noise ratio based on token density.
+
+    Higher scores roughly correspond to more "informational" snippets.
+    """
+
+    t = (text or "").strip()
+    if not t:
+        return 0.0
+    tokens = _normalize_text_for_bow(t)
+    if not tokens:
+        return 0.0
+    return len(tokens) / max(1, len(t))
+
+
+def _pick_representative_sample(segments: List[Segment]) -> str:
+    """Pick a representative sample sentence from a cluster.
+
+    We approximate "signal" using a simple token/length ratio and pick the
+    line with the highest score.
+    """
+
+    best_line = ""
+    best_score = 0.0
+    for seg in segments:
+        for line in seg.text.splitlines():
+            s = line.strip()
+            if not s:
+                continue
+            score = _snr_score(s)
+            if score > best_score:
+                best_score = score
+                best_line = s
+    return best_line
 
 
 def summarize_clusters(clusters: List[Cluster], date_str: str, *, verbose: bool = False) -> str:
