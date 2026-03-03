@@ -9,8 +9,7 @@ useful for:
 
 - Web scraping and content normalization
 - Text patching / incremental edits
-- Knowledge base (Clawkb) helpers
-- Filesystem maintenance (cleanup, renames, etc.)
+- Daily session log summarization for OpenClaw agents
 
 The long‑term goal is to provide both:
 
