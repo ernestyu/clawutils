@@ -295,7 +295,7 @@ def _cosine_from_counts(c1: Counter, c2: Counter) -> float:
     return dot / (n1 * n2)
 
 
-def cluster_segments_tfidf(segments: List[Segment], threshold: float = 0.7) -> List[Cluster]:
+def cluster_segments_tfidf(segments: List[Segment], threshold: float = 0.6) -> List[Cluster]:
     """Cluster segments using a simple bag-of-words cosine similarity.
 
     This is used as a fallback when embeddings are unavailable or fail.
