@@ -25,15 +25,36 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    # Placeholder for the first utility group: web scraping.
+    # Web-related utilities (scrapers, cleaners)
     sp_web = sub.add_parser("web", help="Web-related utilities (scrapers, cleaners)")
     sp_web_sub = sp_web.add_subparsers(dest="web_cmd", required=True)
 
     sp_web_scrape = sp_web_sub.add_parser(
         "scrape",
-        help="Scrape a web page and print normalized markdown (stub: to be implemented)",
+        help="Scrape a web page and print normalized markdown",
     )
     sp_web_scrape.add_argument("url", help="URL to scrape")
+
+    # Text utilities (patch/transform)
+    sp_text = sub.add_parser("text", help="Text utilities (patch, transform)")
+    sp_text_sub = sp_text.add_subparsers(dest="text_cmd", required=True)
+
+    sp_text_patch = sp_text_sub.add_parser(
+        "patch",
+        help="Patch a text file (prepend/append/after marker)",
+    )
+    sp_text_patch.add_argument("--file", required=True, help="Target file path")
+    sp_text_patch.add_argument("--text", required=True, help="Text to insert")
+    sp_text_patch.add_argument(
+        "--mode",
+        choices=["prepend", "append", "after"],
+        required=True,
+        help="Patch mode",
+    )
+    sp_text_patch.add_argument(
+        "--marker",
+        help="Marker for 'after' mode (required when --mode=after)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -60,6 +81,22 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as e:
             sys.stderr.write(f"ERROR: failed to run scraper: {e}\n")
             return 2
+
+    if args.command == "text" and args.text_cmd == "patch":
+        # Delegate to the text patcher module.
+        from .text.patch import main as text_patch_main
+
+        return text_patch_main(
+            [
+                "--file",
+                args.file,
+                "--text",
+                args.text,
+                "--mode",
+                args.mode,
+            ]
+            + (["--marker", args.marker] if args.mode == "after" and args.marker else [])
+        )
 
     parser.print_help()
     return 0
