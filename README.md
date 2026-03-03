@@ -1,5 +1,7 @@
 # clawutils
 
+**Languages:** English | [中文说明](README_zh.md)
+
 A small toolbox of CLI utilities and helpers around OpenClaw.
 
 This repo is intended to collect reusable, script‑friendly tools that are
