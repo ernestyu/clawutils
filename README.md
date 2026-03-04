@@ -2,16 +2,13 @@
 
 **Languages:** English | [中文说明](README_zh.md)
 
-A small toolbox of CLI utilities and helpers around OpenClaw.
+A small CLI toolbox around OpenClaw for:
 
-This repo is intended to collect reusable, script‑friendly tools that are
-useful for:
+- Web scraping → normalized Markdown for knowledge bases
+- Safe text patching → incremental edits to existing files
+- Daily session log summarization → turn OpenClaw chat logs into outlines
 
-- Web scraping and content normalization
-- Text patching / incremental edits
-- Daily session log summarization for OpenClaw agents
-
-The long‑term goal is to provide both:
+This repo collects reusable, script‑friendly tools that you can either:
 
 - A Python library (`clawutils`) you can import, and
 - A unified CLI entrypoint (e.g. `clawutils web scrape <URL>`) so humans and
@@ -92,7 +89,25 @@ clawutils logs daily --help
 The web scraper turns arbitrary web pages into clean, normalized Markdown that
 is suitable for ingest into Clawkb or other knowledge bases.
 
-### 3.1 Basic usage
+### 3.1 Quickstart
+
+Fetch a page and save it as a Markdown file:
+
+```bash
+clawutils web scrape "https://example.com/article" > article.md
+```
+
+Typical usage with Clawkb:
+
+```bash
+# In Clawkb repo
+export CLAWKB_SCRAPE_CMD="clawutils web scrape {url}"
+python -m clawkb ingest --url "https://example.com/article"
+```
+
+See below for more details.
+
+### 3.2 Basic usage
 
 ```bash
 clawutils web scrape "https://example.com/article" > out.md
@@ -158,6 +173,26 @@ python -m clawkb ingest \
 
 ## 4. Text Patcher (`clawutils text patch`)
 
+### 4.1 Quickstart
+
+Append a line to the end of a file:
+
+```bash
+clawutils text patch --file README.md --mode append --text "\nUpdated by clawutils.\n"
+```
+
+Insert a block after a marker line:
+
+```bash
+clawutils text patch \
+  --file THESIS_PLAN.md \
+  --mode after \
+  --marker "## 3. Planned workstreams" \
+  --text "\n- [ ] TODO: add more experiments.\n"
+```
+
+See below for modes and details.
+
 The text patcher provides a small, safe tool for incremental edits to text
 files. It is designed to avoid whole‑file rewrites when only small changes are
 needed.
@@ -214,6 +249,28 @@ handle the insertion on disk.
 ---
 
 ## 5. Daily Logs Summarizer (`clawutils logs daily`)
+
+### 5.1 Quickstart
+
+Summarise yesterday’s logs for the default agent:
+
+```bash
+clawutils logs daily > logs_$(date -u -d yesterday +%F).md
+```
+
+Specify a date and agent directory explicitly:
+
+```bash
+clawutils logs daily \
+  --date 2026-03-02 \
+  --agent-dir ~/.openclaw/agents/main \
+  --cluster-threshold 0.6 \
+  --verbose \
+  > logs_2026-03-02.md
+```
+
+The output is a semantic outline (topics, keywords, quotes) that can be used
+as a diary or as input to other tools.
 
 The logs summarizer turns a day's worth of OpenClaw session logs into a
 structured outline or diary‑style summary.

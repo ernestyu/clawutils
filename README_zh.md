@@ -1,17 +1,17 @@
 # clawutils
 
-一个围绕 OpenClaw 的小型工具箱，用来收集“顺手的小工具”：
+一个围绕 OpenClaw 的小型命令行工具箱，主要做三件事：
 
-- 网页抓取与内容规范化
-- 文本增量补丁（在大文件中只改一小段）
-- OpenClaw 会话按天日志摘要
+- **网页抓取 → 规范化 Markdown**，方便丢给 Clawkb 等知识库；
+- **文本安全补丁 → 增量修改已有文件**，而不是整篇重写；
+- **按天日志摘要 → 把 OpenClaw 的聊天记录整理成大纲。**
 
-目标是同时提供：
+你既可以：
 
-- 可通过 `import clawutils` 使用的 Python 库；
-- 一个统一的 CLI 入口（例如 `clawutils web scrape <URL>`），方便人类和 Agent 在一个命名空间里发现这些工具。
+- 通过 `import clawutils` 当作 Python 库使用；
+- 也可以通过统一的 CLI 入口（例如 `clawutils web scrape <URL>`）直接在命令行或 Agent 里调用。
 
-> 当前状态：已可在日常环境中使用，当前包含：
+> 当前状态：已可在日常环境中使用，目前包含：
 > - 基于 Playwright + Readability 的网页抓取器（`clawutils web scrape`）；
 > - 安全的文本补丁工具（`clawutils text patch`），用于在文件头/尾或特定标记后插入文本；
 > - OpenClaw 会话“按天日志总结”工具（`clawutils logs daily`）。
@@ -85,7 +85,25 @@ clawutils logs daily --help
 
 将任意网页转换为规范化 Markdown，适合作为 Clawkb 等知识库的输入。
 
-### 3.1 基本用法
+### 3.1 快速上手
+
+把网页保存成 Markdown 文件：
+
+```bash
+clawutils web scrape "https://example.com/article" > article.md
+```
+
+和 Clawkb 搭配使用的典型方式：
+
+```bash
+# 在 Clawkb 仓库目录
+export CLAWKB_SCRAPE_CMD="clawutils web scrape {url}"
+python -m clawkb ingest --url "https://example.com/article"
+```
+
+下面是更详细的说明。
+
+### 3.2 基本用法
 
 ```bash
 clawutils web scrape "https://example.com/article" > out.md
@@ -151,7 +169,27 @@ python -m clawkb ingest \
 
 在大文件中安全地做小范围修改，而不是整篇重写。
 
-### 4.1 模式
+### 4.1 快速上手
+
+在文件结尾追加一行：
+
+```bash
+clawutils text patch --file README.md --mode append --text "\nUpdated by clawutils.\n"
+```
+
+在某个标记行之后插入一段内容：
+
+```bash
+clawutils text patch \
+  --file THESIS_PLAN.md \
+  --mode after \
+  --marker "## 3. Planned workstreams" \
+  --text "\n- [ ] TODO: add more experiments.\n"
+```
+
+下面是具体模式说明。
+
+### 4.2 模式
 
 支持三种模式：
 
@@ -206,13 +244,18 @@ Agent 只需生成要插入的那段文本，真正的文件定位与修改由 `
 > 当前实现主要针对主 Agent 的 JSONL 会话日志目录：
 > `~/.openclaw/agents/main/sessions`。
 
-### 5.1 基本用法
+### 5.1 快速上手
+
+对“昨天”的日志做摘要：
 
 ```bash
 # 总结（UTC 意义上的）昨天
 clawutils logs daily
+```
 
-# 总结指定日期
+显式指定日期和 agent 目录：
+
+```bash
 clawutils logs daily --date 2026-03-02
 
 # 使用自定义 agent 目录并打开详细输出
@@ -220,6 +263,10 @@ clawutils logs daily --date 2026-03-02 \
   --agent-dir ~/.openclaw/agents/main \
   --verbose
 ```
+
+输出是一份按主题聚类的大纲（主题、关键词、代表性语句），可以当“日记索引”，也可以作为后续工具的输入。
+
+### 5.2 基本用法
 
 关键参数：
 
