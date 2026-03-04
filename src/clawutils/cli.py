@@ -16,8 +16,16 @@ import sys
 import subprocess
 from pathlib import Path
 
+from .utils import load_project_env
+
 
 def main(argv: list[str] | None = None) -> int:
+    # Try to load project-level .env once, without failing hard if anything goes wrong.
+    try:
+        load_project_env()
+    except Exception:
+        pass
+
     parser = argparse.ArgumentParser(
         prog="clawutils",
         description="CLI utilities around OpenClaw (web scraping, text patching, daily logs)",
